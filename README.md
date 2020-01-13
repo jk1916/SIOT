@@ -8,6 +8,9 @@ https://youtu.be/24N-qHffTkw
 
 Live Demo Video
 https://drive.google.com/open?id=1HimW8FO8nZqNMN7hUxMg2pdLp1NqiSTv
+This folder contains 3 videos. 
+The first video shows the start of the syncing of the sportswatch, and the second shows the watch finishing syncing. 
+The last video shows how the Google Sheet automatically updates with the new Strava data and then the weather data for that activity. It also shows how the website page shows the new activity when the page is refreshed. 
 
 Otherwise please access the scripts and datasheet using these links:
 
