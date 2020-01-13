@@ -1,0 +1,55 @@
+
+function myFunction() {
+
+  var sheet = SpreadsheetApp.openById('1pNXfNzlWG-bxmejvyEvmosPsRDcQx1h6AlrGTUwPfaM').getSheetByName('Sheet1');
+
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  var DATA_TITLES = sheet.getRange(1,13,1,6).getValues();
+  Logger.log(DATA_TITLES)
+
+
+  var apiKey = '013a75696b063335f111ca19623968d3'; //apiKey for forecast.io weather api
+  var long = sheet.getRange('L'+lastRow).getValue();
+  var lat = sheet.getRange('K'+lastRow).getValue();
+  var start = sheet.getRange('A'+lastRow).getValue();
+
+  var url = 'https://api.darksky.net/forecast/' + apiKey + '/' + lat + ',' + long + ',' + start +'?exclude=minutely,hourly,daily,alerts,flags&units=uk2';
+
+
+  var response = UrlFetchApp.fetch(url); // get api endpoint
+  var json = response.getContentText(); // get the response content as text
+  var data = JSON.parse(json); //parse text into json
+
+  Logger.log(data); //log data to logger to check
+
+  var stats=[]; //create empty array to hold data points
+
+  var date = new Date(); //create new date for timestamp
+
+  //The following lines push the parsed json into empty stats array
+
+    stats.push(data.currently.summary);
+    stats.push(data.currently.icon);
+    stats.push(data.currently.temperature); //temp
+    stats.push(data.currently.humidity);
+    stats.push(data.currently.windSpeed);
+    stats.push(data.currently.windBearing)
+   Logger.log(stats);
+
+  var input1 = sheet.getRange((lastRow),13);
+  var input2 = sheet.getRange((lastRow),14);
+  var input3 = sheet.getRange((lastRow),15);
+  var input4 = sheet.getRange((lastRow),16);
+  var input5 = sheet.getRange((lastRow),17);
+  var input6 = sheet.getRange((lastRow),18);
+
+  input1.setValue(stats[0]);
+  input2.setValue(stats[1]);
+  input3.setValue(stats[2]);
+  input4.setValue(stats[3]);
+  input5.setValue(stats[4]);
+  input6.setValue(stats[5]);
+
+
+}

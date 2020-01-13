@@ -1,0 +1,275 @@
+var CLIENT_ID = '41680';
+var CLIENT_SECRET = '73e54291bb7d845e48e7e1a4f5d3f324f98af2b4';
+var SPREADSHEET_NAME = "SW";
+var SPREADSHEET_ID = "1pNXfNzlWG-bxmejvyEvmosPsRDcQx1h6AlrGTUwPfaM";
+var SHEET_NAME = "Sheet1";
+var DEBUG = false;
+//If you want to retrieve details such as 'description' you need to make the value of RETRIEVE_DETAILS = true;
+var RETRIEVE_DETAILS = true;
+var ONLY_WITH_HEARTRATE = false;
+//If you want to retrieves only one type of activity, you should write the activity type below. Ex: var FILTER_BY_TYPE = "Ride";
+var FILTER_BY_TYPE = "Run";
+//Strava returns a lot of data. You can choose which fields you want to be returned.
+//The field names should match the field names returned from getActivities method,
+//which you can check http://developers.strava.com/docs/reference/#api-Activities-getLoggedInAthleteActivities on the right
+//If you set RETRIEVE_DETAILS to true, you can specify the fields returned
+//from http://developers.strava.com/docs/reference/#api-Activities-getActivityById as well. Again check the right part of the page
+
+var DATA_FIELDS = ['start_date','id','name','type',
+                   'distance','elapsed_time','average_speed',
+                   'max_speed','average_heartrate','max_heartrate',
+                   'start_latitude','start_longitude'];
+
+//This is the sheet heading for the fields above. The number of items should match with DATA_FIELDS
+var HEADING_FOR_DATA_FIELDS = ['Date', 'Activity ID', 'Activity Name','Activity Type','Distance (m)','Time','Avg Speed','Max Speed','Avg Heartrate','Max Heartrate','Latitude','Longitude'];
+
+//Strava changed its authentication mechanism. The old authentication method will stop working on Oct 15th, 2019
+//for old oauth use "view_private", for new one use "activity:read_all" These include reading your private activities.
+//If you want to use a different scope or several scopes check https://developers.strava.com/docs/oauth-updates/
+//For new scopes, additional scopes can be added with a comma inbetween
+//var STRAVA_API_SCOPE = "view_private";
+var STRAVA_API_SCOPE = ("activity:read_all","activity:write");
+
+/**
+ * Configures the service.
+ */
+function getService() {
+  return OAuth2.createService('Strava')
+      // Set the endpoint URLs.
+      .setAuthorizationBaseUrl('https://www.strava.com/oauth/authorize')
+      .setTokenUrl('https://www.strava.com/oauth/token')
+
+      // Set the client ID and secret.
+      .setClientId(CLIENT_ID)
+      .setClientSecret(CLIENT_SECRET)
+
+      // Set the name of the callback function that should be invoked to complete
+      // the OAuth flow.
+      .setCallbackFunction('authCallback')
+
+      // Set the property store where authorized tokens should be persisted.
+      .setPropertyStore(PropertiesService.getUserProperties())
+      //Include private activities when retrieving activities.
+      .setScope(STRAVA_API_SCOPE)
+}
+
+/**
+ * Handles the OAuth callback.
+ */
+function authCallback(request) {
+  var service = getService();
+  var authorized = service.handleCallback(request);
+  if (authorized) {
+    return HtmlService.createHtmlOutput('Success!');
+  } else {
+    return HtmlService.createHtmlOutput('Denied');
+  }
+}
+
+function logAccessToken() {
+  var service = getService();
+  Logger.log("Access token: "+ service.getAccessToken());
+}
+
+/**
+ * Reset the authorization state, so that it can be re-tested.
+ */
+function reset() {
+  var service = getService();
+  service.reset();
+}
+
+/**
+ * Authorizes and makes a request to the API.
+ */
+function run() {
+  var service = getService();
+  if (service.hasAccess()) {
+    var url = 'https://www.strava.com/api/v3/athlete';
+    var response = UrlFetchApp.fetch(url, {
+      headers: {
+        Authorization: 'Bearer ' + service.getAccessToken()
+      }
+    });
+    var result = JSON.parse(response.getContentText());
+    Logger.log(JSON.stringify(result, null, 2));
+  } else {
+    var authorizationUrl = service.getAuthorizationUrl();
+    Logger.log('Open the following URL and re-run the script: %s',
+        authorizationUrl);
+  }
+}
+
+function retrieveData() {
+  //validate input
+  validateConfig()
+
+  //if sheet is empty retrieve all data
+  var service = getService();
+  if (service.hasAccess()) {
+    var sheet = getStravaSheet();
+    var unixTime = retrieveLastDate(sheet);
+//https://www.strava.com/api/v3/activities/{id}" "Authorization: Bearer [[token]]
+    var url = 'https://www.strava.com/api/v3/athlete/activities?per_page=5&after=' + unixTime;
+    var response = UrlFetchApp.fetch(url, {
+      headers: {
+        Authorization: 'Bearer ' + service.getAccessToken()
+      }
+    });
+
+    var result = JSON.parse(response.getContentText());
+
+    if (result.length == 0) {
+      Logger.log("No new data");
+      return;
+    }
+
+    if (RETRIEVE_DETAILS) {
+      retrieveAndInsertActivityDetailsForActivityList(result);
+    }
+
+    var data = convertData(result);
+
+    if (data.length == 0) {
+      Logger.log("No new data with the used filters (ONLY_WITH_HEARTRATE, FILTER_BY_TYPE)");
+      return;
+    }
+
+    insertData(sheet, data);
+
+  } else {
+    var authorizationUrl = service.getAuthorizationUrl();
+    Logger.log('Open the following URL and re-run the script: %s',
+        authorizationUrl);
+  }
+}
+
+function validateConfig() {
+  if (DATA_FIELDS.length != HEADING_FOR_DATA_FIELDS.length) {
+    Logger.log("The length of DATA_FIELDS does not match with the length of HEADING_FOR_DATA_FIELDS. ");
+    Logger.log(DATA_FIELDS.length.toString()+" != "+HEADING_FOR_DATA_FIELDS.length.toString() + " Please fix.");
+  }
+}
+
+function retrieveAndInsertActivityDetailsForActivityList(activityListResult) {
+  var service = getService();
+  if (service.hasAccess()) {
+
+    var url = 'https://www.strava.com/api/v3/activities/';
+    var query = '?include_all_efforts=false';
+
+    for (var i = 0; i < activityListResult.length; i++) {
+      var activityURL = url + activityListResult[i]['id'] + query;
+      var response = UrlFetchApp.fetch(activityURL, {
+        headers: {
+          Authorization: 'Bearer ' + service.getAccessToken()
+        }
+      });
+
+      var result = JSON.parse(response.getContentText());
+      extendObj(activityListResult[i], result);
+    }
+
+  } else {
+    var authorizationUrl = service.getAuthorizationUrl();
+    Logger.log('Open the following URL and re-run the script: %s',
+        authorizationUrl);
+  }
+}
+
+function extendObj(obj1, obj2){
+    for (var key in obj2){
+        if(!obj1.hasOwnProperty(key)){
+            obj1[key] = obj2[key];
+        }
+    }
+}
+
+function retrieveLastDate(sheet) {
+  var lastRow = sheet.getLastRow();
+  var unixTime = 0;
+  if (lastRow > 0) {
+      var dateCell = sheet.getRange(lastRow, 1);
+      var dateString = dateCell.getValue();
+      var date = new Date((dateString || "").replace(/-/g,"/").replace(/[TZ]/g," "));
+      unixTime = date/1000;
+   }
+   return unixTime;
+}
+
+function convertData(result) {
+  var data = [];
+
+  for (var i = 0; i < result.length; i++) {
+    if ((!ONLY_WITH_HEARTRATE || result[i]["has_heartrate"]) && (FILTER_BY_TYPE.length == 0 || result[i]["type"] == FILTER_BY_TYPE)) {
+      var item = [];
+
+      for (var j = 0; j < DATA_FIELDS.length; j++) {
+        var field_name = DATA_FIELDS[j];
+        var single_data = result[i][field_name];
+
+        //distance is returned in meters, that's why I divide it into 1000 to have kms
+        if (field_name == 'distance') {
+          single_data = single_data/1000;
+        }
+
+        // if the data does not exist undefined is returned,
+        // I replace undefined with '-'
+        if (single_data == undefined) {
+          single_data = '-'
+        }
+
+        item.push(single_data);
+      }
+
+      data.push(item);
+    }
+
+  }
+
+  return data;
+}
+
+function getStravaSheet() {
+  var spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = getOrCreateSheet(spreadsheet, SHEET_NAME);
+  return sheet;
+}
+
+function insertData(sheet, data) {
+  var header = HEADING_FOR_DATA_FIELDS;
+  ensureHeader(header, sheet);
+
+  var lastRow = sheet.getLastRow();
+  var range = sheet.getRange(lastRow+1,1,data.length,DATA_FIELDS.length);
+  range.setValues(data);
+}
+
+function ensureHeader(header, sheet) {
+  // Only add the header if sheet is empty
+  if (sheet.getLastRow() == 0) {
+    if (DEBUG) {
+      Logger.log('Sheet is empty, adding header.');
+    }
+    sheet.appendRow(header);
+    return true;
+
+  } else {
+    if (DEBUG) {
+      Logger.log('Sheet is not empty, not adding header.')
+    }
+    return false;
+  }
+}
+
+
+function getOrCreateSheet(spreadsheet, sheetName) {
+  var sheet = spreadsheet.getSheetByName(sheetName);
+
+  if (!sheet) {
+    if (DEBUG) Logger.log('Sheet "%s" does not exist, adding new one.', sheetName);
+    sheet = spreadsheet.insertSheet(sheetName)
+  }
+
+  return sheet;
+}
