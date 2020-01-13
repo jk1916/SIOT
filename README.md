@@ -3,8 +3,11 @@ Strava Weather SIOT Coursework Repository
 
 The Strava and Weather Data retrieval files are JavaScript files designed to be run in a Google Apps Script document linked to a Google Sheet. Please watch the video to understand how this works. 
 
-Youtube Video
+Youtube Explanation Video
 https://youtu.be/24N-qHffTkw
+
+Live Demo Video
+https://drive.google.com/open?id=1HimW8FO8nZqNMN7hUxMg2pdLp1NqiSTv
 
 Otherwise please access the scripts and datasheet using these links:
 
